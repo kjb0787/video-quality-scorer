@@ -1,0 +1,29 @@
+# Data
+data/
+output/
+models/
+*.rar
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Private notes (do not push)
+CLAUDE.md
+STUDY_GUIDE.md
+colton-interview.md
+
+# OS
+.DS_Store
+Thumbs.db
