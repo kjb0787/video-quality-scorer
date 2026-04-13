@@ -19,10 +19,9 @@ build/
 .idea/
 *.swp
 
-# Private notes (do not push)
-CLAUDE.md
-STUDY_GUIDE.md
-colton-interview.md
+# Local notes
+notes/
+*.local.md
 
 # OS
 .DS_Store
