@@ -1,6 +1,6 @@
 # Video Quality Scorer
 
-Ray-based pipeline for scoring video training data quality. Computes 5 quality signals per video and produces a per-category manifest for ML training data curation.
+Ray-based pipeline for scoring video training data quality. Computes 6 quality signals per video and produces a per-category manifest for ML training data curation.
 
 ## Why This Exists
 
@@ -18,6 +18,9 @@ Video Dataset → Parquet Index → Ray Data Pipeline → Scored Parquet → Cat
                │Temporal   │    │Optical   │       │pHash     │
                │Consistency│    │Flow      │       │Dedup     │
                ├──────────┤    └──────────┘       └──────────┘
+               │Scene Cut  │
+               │Detector   │
+               ├──────────┤
                │Aesthetic  │
                │Score      │
                ├──────────┤
@@ -31,6 +34,7 @@ Video Dataset → Parquet Index → Ray Data Pipeline → Scored Parquet → Cat
 | Signal | Method | Why It Matters |
 |--------|--------|----------------|
 | **Temporal Consistency** | CLIP frame-to-frame cosine similarity | Low score = flickery, incoherent video — bad training signal for temporal generation |
+| **Scene Cut Detection** | Per-transition CLIP similarity thresholding | Flags hard cuts, flashes, and abrupt scene changes that teach the model visual discontinuity is normal |
 | **Aesthetic Score** | LAION aesthetic predictor (MLP on CLIP ViT-L-14) | Filters low-visual-quality frames that degrade generation aesthetics |
 | **Prompt-Video Alignment** | CLIP text-video cosine similarity | Ensures video content matches its category label — critical for conditional generation |
 | **Optical Flow Magnitude** | Farneback (OpenCV) | Filters static clips (no motion) and extreme motion blur |
