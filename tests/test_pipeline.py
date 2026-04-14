@@ -14,7 +14,7 @@ def test_pipeline_end_to_end(sample_index_parquet, tmp_path):
         output_dir=tmp_path / "output",
         batch_size=2,
         num_workers=1,
-        ray_num_cpus=6,
+        ray_num_cpus=8,
     )
 
     output_path = run_pipeline(settings)
@@ -26,7 +26,8 @@ def test_pipeline_end_to_end(sample_index_parquet, tmp_path):
     assert len(df) == 3
     expected_cols = [
         "video_id", "video_path", "category", "filename",
-        "temporal_consistency", "aesthetic_score", "prompt_alignment",
+        "temporal_consistency", "scene_cut_count", "has_scene_cut",
+        "min_frame_similarity", "aesthetic_score", "prompt_alignment",
         "optical_flow_mean", "optical_flow_std",
         "phash", "is_near_duplicate",
     ]

@@ -1,6 +1,6 @@
 # Video Quality Scorer
 
-Ray-based pipeline for scoring video training data quality. Computes 5 quality signals per video and produces a per-category manifest for ML training data curation.
+Ray-based pipeline for scoring video training data quality. Computes 6 quality signals per video and produces a per-category manifest for ML training data curation.
 
 ## Why This Exists
 
@@ -18,6 +18,9 @@ Video Dataset → Parquet Index → Ray Data Pipeline → Scored Parquet → Cat
                │Temporal   │    │Optical   │       │pHash     │
                │Consistency│    │Flow      │       │Dedup     │
                ├──────────┤    └──────────┘       └──────────┘
+               │Scene Cut  │
+               │Detector   │
+               ├──────────┤
                │Aesthetic  │
                │Score      │
                ├──────────┤
@@ -31,6 +34,7 @@ Video Dataset → Parquet Index → Ray Data Pipeline → Scored Parquet → Cat
 | Signal | Method | Why It Matters |
 |--------|--------|----------------|
 | **Temporal Consistency** | CLIP frame-to-frame cosine similarity | Low score = flickery, incoherent video — bad training signal for temporal generation |
+| **Scene Cut Detection** | Per-transition CLIP similarity thresholding | Flags hard cuts, flashes, and abrupt scene changes that teach the model visual discontinuity is normal |
 | **Aesthetic Score** | LAION aesthetic predictor (MLP on CLIP ViT-L-14) | Filters low-visual-quality frames that degrade generation aesthetics |
 | **Prompt-Video Alignment** | CLIP text-video cosine similarity | Ensures video content matches its category label — critical for conditional generation |
 | **Optical Flow Magnitude** | Farneback (OpenCV) | Filters static clips (no motion) and extreme motion blur |
@@ -56,22 +60,33 @@ python3.13 -m venv .venv
 .venv/bin/python scripts/run_pipeline.py --num-workers 2
 ```
 
-## Sample Output
+## Cross-Category Benchmark
 
-### Scored Data (per-video)
+Scored 1,456 videos across 10 diverse UCF-101 categories. Each video is processed through all 6 quality signals. Results validate that each scorer produces sensible rankings across categories with fundamentally different motion and visual characteristics.
 
-| video_id | temporal_consistency | aesthetic_score | prompt_alignment | optical_flow_mean | is_near_duplicate |
-|----------|---------------------|-----------------|------------------|-------------------|-------------------|
-| ApplyEyeMakeup/v_ApplyEyeMakeup_g01_c01 | 0.97 | 3.9 | 0.29 | 3.8 | False |
-| ApplyEyeMakeup/v_ApplyEyeMakeup_g01_c02 | 0.98 | 4.1 | 0.30 | 2.2 | False |
-| ApplyEyeMakeup/v_ApplyEyeMakeup_g01_c03 | 0.97 | 4.0 | 0.28 | 3.4 | False |
+### Per-Category Scorer Means
 
-### Category Manifest
+| Category | Videos | Temporal Consistency | Aesthetic Score | Prompt Alignment | Optical Flow | Scene Cuts | Duplicates |
+|----------|-------:|---------------------:|----------------:|-----------------:|-------------:|-----------:|-----------:|
+| Typing | 136 | **0.980** | 3.99 | 0.263 | **1.61** | 0 | 91 |
+| SoccerPenalty | 137 | 0.978 | **4.36** | 0.261 | 2.66 | 0 | 45 |
+| Drumming | 161 | 0.964 | 3.97 | 0.246 | 2.53 | 0 | 73 |
+| CricketShot | 167 | 0.963 | 4.07 | 0.267 | 2.34 | 1 | 87 |
+| Bowling | 155 | 0.958 | 4.02 | 0.274 | 5.90 | 4 | 13 |
+| Basketball | 134 | 0.955 | 3.83 | 0.258 | 3.17 | 1 | 40 |
+| RockClimbingIndoor | 144 | 0.954 | 4.02 | **0.299** | 5.91 | 4 | 2 |
+| HorseRiding | 164 | 0.946 | 3.45 | 0.270 | 6.60 | 1 | 3 |
+| Skijet | 100 | 0.939 | 3.64 | 0.221 | 6.90 | 0 | 0 |
+| IceDancing | 158 | **0.918** | 4.08 | 0.274 | **7.07** | 1 | 0 |
 
-| category | count | mean_quality | p50_quality | filtered_count | duplicate_count |
-|----------|-------|-------------|-------------|----------------|-----------------|
-| ApplyEyeMakeup | 145 | 0.59 | 0.59 | 91 | 29 |
-| ApplyLipstick | 55 | 0.49 | 0.48 | 14 | 15 |
+### Key Observations
+
+- **Optical flow tracks real-world motion**: Typing (1.61) < CricketShot (2.34) < Basketball (3.17) < HorseRiding (6.60) < IceDancing (7.07). Static indoor activities score low; fast outdoor sports score high.
+- **Temporal consistency inversely correlates with motion**: IceDancing (0.918) has the most frame-to-frame visual change; Typing (0.980) has the least. This confirms the scorer distinguishes content stability from visual quality.
+- **Aesthetic scores reflect visual composition**: SoccerPenalty (4.36) — well-lit stadiums, clean backgrounds — scores highest. HorseRiding (3.45) — variable outdoor conditions, motion blur — scores lowest. Manual review of the lowest-scoring video (HorseRiding g08_c03, 2.82) confirmed genuinely poor visual quality: monotonic color, blurry.
+- **Prompt alignment is highest for visually distinctive categories**: RockClimbingIndoor (0.299) has unique visual features (walls, harnesses, chalk). Skijet (0.221) is harder for CLIP to distinguish from generic water/boat scenes. Note the narrow global range (0.19–0.32) — prompt alignment works better as a relative signal within a composite score than as a hard threshold.
+- **Scene cut detector has a subject-motion false positive problem**: 12 flags across 1,456 videos, but manual review found **zero real scene cuts** in this batch. All flags were triggered by subject motion within a static camera frame — a moving cricket ball (CricketShot g20_c01, min_sim=0.543), a basketball play (Basketball g18_c03, min_sim=0.561), and camera-relative movement during climbing and horse riding. CLIP embeddings can't distinguish "the scene changed" from "the subject moved." This is consistent with the earlier scene-cut-only validation (67% true positive rate on 12 flags from a different sample), and confirms the detector is more useful as a "visual discontinuity" signal than a precise scene-cut classifier.
+- **pHash dedup threshold is category-dependent**: Typing (91/136 = 67%) — verified correct, nearly identical webcam setups. CricketShot (87/167 = 52%) — false positives confirmed: videos from the same group share identical backgrounds but show meaningfully different action (e.g., batter running vs standing). A threshold of 8 works well for static-camera categories but is too aggressive for action categories where background similarity is high. Production use would benefit from per-category threshold tuning or a learned dedup embedding.
 
 ## Configuration
 

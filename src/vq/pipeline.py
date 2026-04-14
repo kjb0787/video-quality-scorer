@@ -8,6 +8,7 @@ from vq.scorers.aesthetic import AestheticScorer
 from vq.scorers.optical_flow import OpticalFlowScorer
 from vq.scorers.phash_dedup import PHashDedupScorer
 from vq.scorers.prompt_alignment import PromptAlignmentScorer
+from vq.scorers.scene_cut import SceneCutDetector
 from vq.scorers.temporal_consistency import TemporalConsistencyScorer
 
 
@@ -56,6 +57,7 @@ def run_pipeline(settings: Settings | None = None) -> str:
         ds = (
             ds
             .map_batches(TemporalConsistencyScorer, **gpu_kwargs)
+            .map_batches(SceneCutDetector, **gpu_kwargs)
             .map_batches(AestheticScorer, **gpu_kwargs)
             .map_batches(PromptAlignmentScorer, **gpu_kwargs)
             .map_batches(OpticalFlowScorer, **cpu_kwargs)
